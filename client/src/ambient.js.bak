@@ -1,0 +1,140 @@
+const KEY = 'echoes-ambient'
+const LEVEL = 0.07 // overall loudness: raise for louder, lower for quieter
+let ctx = null
+let master = null
+let started = false
+let on = true
+let btn = null
+
+try { on = localStorage.getItem(KEY) !== 'off' } catch (e) {}
+
+function build() {
+  ctx = new (window.AudioContext || window.webkitAudioContext)()
+  master = ctx.createGain()
+  master.gain.value = 0
+  master.connect(ctx.destination)
+
+  // Low drone: slightly detuned notes that beat slowly against each other
+  const droneFilter = ctx.createBiquadFilter()
+  droneFilter.type = 'lowpass'
+  droneFilter.frequency.value = 220
+  droneFilter.connect(master)
+  ;[55, 55.7, 82.4, 110.9].forEach((f, i) => {
+    const o = ctx.createOscillator()
+    o.type = i < 2 ? 'sawtooth' : 'triangle'
+    o.frequency.value = f
+    const g = ctx.createGain()
+    g.gain.value = i < 2 ? 0.35 : 0.2
+    o.connect(g)
+    g.connect(droneFilter)
+    o.start()
+  })
+  const lfo = ctx.createOscillator()
+  lfo.frequency.value = 0.07
+  const lfoGain = ctx.createGain()
+  lfoGain.gain.value = 90
+  lfo.connect(lfoGain)
+  lfoGain.connect(droneFilter.frequency)
+  lfo.start()
+
+  // Faint wind: filtered noise whose pitch and volume drift slowly
+  const len = ctx.sampleRate * 3
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate)
+  const data = buf.getChannelData(0)
+  for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1
+  const noise = ctx.createBufferSource()
+  noise.buffer = buf
+  noise.loop = true
+  const band = ctx.createBiquadFilter()
+  band.type = 'bandpass'
+  band.frequency.value = 500
+  band.Q.value = 0.7
+  const windGain = ctx.createGain()
+  windGain.gain.value = 0.25
+  noise.connect(band)
+  band.connect(windGain)
+  windGain.connect(master)
+  noise.start()
+  const wl = ctx.createOscillator()
+  wl.frequency.value = 0.11
+  const wlg = ctx.createGain()
+  wlg.gain.value = 250
+  wl.connect(wlg)
+  wlg.connect(band.frequency)
+  wl.start()
+  const wl2 = ctx.createOscillator()
+  wl2.frequency.value = 0.05
+  const wlg2 = ctx.createGain()
+  wlg2.gain.value = 0.15
+  wl2.connect(wlg2)
+  wlg2.connect(windGain.gain)
+  wl2.start()
+
+  shimmer()
+}
+
+// A distant, soft chime every 9-23 seconds
+function shimmer() {
+  setTimeout(() => {
+    if (on && ctx && ctx.state === 'running') {
+      const o = ctx.createOscillator()
+      o.type = 'sine'
+      o.frequency.value = [392, 466, 587, 698][Math.floor(Math.random() * 4)]
+      const g = ctx.createGain()
+      const t = ctx.currentTime
+      g.gain.setValueAtTime(0, t)
+      g.gain.linearRampToValueAtTime(0.15, t + 2)
+      g.gain.linearRampToValueAtTime(0, t + 6)
+      o.connect(g)
+      g.connect(master)
+      o.start(t)
+      o.stop(t + 6.2)
+    }
+    shimmer()
+  }, 9000 + Math.random() * 14000)
+}
+
+function label() {
+  if (btn) btn.textContent = on ? 'sound: on' : 'sound: off'
+}
+
+function applyLevel() {
+  if (!ctx) return
+  master.gain.setTargetAtTime(on ? LEVEL : 0, ctx.currentTime, on ? 2 : 0.5)
+}
+
+function start() {
+  if (started) return
+  started = true
+  build()
+  ctx.resume()
+  applyLevel()
+}
+
+function toggle() {
+  if (!started && on) { start(); return }
+  on = !on
+  try { localStorage.setItem(KEY, on ? 'on' : 'off') } catch (e) {}
+  if (on && !started) start()
+  if (ctx && ctx.state === 'suspended') ctx.resume()
+  applyLevel()
+  label()
+}
+
+function init() {
+  btn = document.createElement('button')
+  btn.setAttribute('aria-label', 'Toggle ambient sound')
+  btn.style.cssText = 'position:fixed;left:12px;bottom:12px;z-index:50;padding:6px 10px;font:12px sans-serif;color:#bbb;background:rgba(0,0,0,.45);border:1px solid #444;border-radius:6px;cursor:pointer;opacity:.55'
+  btn.onmouseenter = () => { btn.style.opacity = '1' }
+  btn.onmouseleave = () => { btn.style.opacity = '.55' }
+  btn.onpointerdown = (e) => e.stopPropagation()
+  btn.onclick = toggle
+  document.body.appendChild(btn)
+  label()
+  const first = () => { if (on) start() }
+  document.addEventListener('pointerdown', first, { once: true })
+  document.addEventListener('keydown', first, { once: true })
+}
+
+if (document.body) init()
+else document.addEventListener('DOMContentLoaded', init)

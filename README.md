@@ -94,6 +94,8 @@ If Backboard isn't set up, memory falls back to a local file in `server/data/mem
 
 ## 🌐 The live version
 
+**Live:** https://echoes-of-the-house.onrender.com
+
 The deployed site on Render serves the house and its memory. Gemma, TabPFN and Piper run on a local machine, so the full encounter with the ghost speaking is shown in the demo video.
 
 ## 💭 Why I built this
